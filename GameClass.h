@@ -6,8 +6,8 @@ struct Player {
 	Player(String MainWeapon_, Vec2 Pos_, String Type_, String Name_) {
 		if (MainWeapon_ != U"M1" && MainWeapon_ != U"M2" && MainWeapon_ != U"S1" && MainWeapon_ != U"S2") {
 			if (MainWeapon_ == U"R") {
-				Array<String>a = { U"M1",U"M2",U"S1",U"S2" };
-				MainWeapon = a[int32(Random() * 4)];
+				Array<String>a = { U"M1",U"M2" };
+				MainWeapon = a[int32(Random() * a.size())];
 			}
 			else {
 				throw Error(U"Visable Weapon Type '" + MainWeapon_ + U"'");
@@ -24,7 +24,7 @@ struct Player {
 			MoveSpeed = 8;
 		}
 		elif(MainWeapon == U"M2") {
-			CoolMax = 8;
+			CoolMax = 5;
 			Err = 0;
 			MoveSpeed = 8;
 		}
@@ -55,6 +55,12 @@ struct Player {
 		}
 	}
 
+	void SetBody(P2World &world) {
+		Body = world.createDynamicCircle(Pos, 50);
+		Body.setPos(Pos);
+		//throw Error(Format(Body.getPos()));
+	}
+
 	String MainWeapon; //メイン武器(マシンガン1,2(M1,M2):スナイパー1,2(S1,S2))
 	/*
 	M1:精度高、ダメージ低
@@ -73,6 +79,8 @@ struct Player {
 	String Name; //プレイヤー名
 	int32 MoveSpeed;
 	double Arc;
+	double SwitchArc; //CPU用
+	P2Body Body;
 };
 
 
@@ -86,15 +94,15 @@ struct Bullet {
 			Life = 30;
 		}
 		elif(Weapon == U"Main" && Player_.MainWeapon == U"M2") {
-			Damage = 10;
+			Damage = 8;
 			Life = 30;
 		}
 		elif(Weapon == U"Main" && Player_.MainWeapon == U"S1") {
-			Damage = 25;
+			Damage = 35;
 			Life = 50;
 		}
 		elif(Weapon == U"Main" && Player_.MainWeapon == U"S2") {
-			Damage = 35;
+			Damage = 50;
 			Life = 50;
 		}
 		else {
@@ -110,4 +118,23 @@ struct Bullet {
 	int32 Life; //飛び終わるまでのフレーム数
 	int32 Speed; //飛ぶ速さ
 	String Master; //弾を撃ったプレイヤー名
+};
+
+struct KillLog {
+	KillLog(String str_) {
+		str = str_;
+		life = 500;
+	}
+
+	String str;
+	int32 life;
+};
+
+struct Object {
+
+	Object(Vec2 Pos, Vec2 Scale) {
+		Body = Rect(Pos.x, Pos.y, Scale.x, Scale.y);
+	}
+
+	Rect Body;
 };

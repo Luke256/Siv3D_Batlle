@@ -5,16 +5,41 @@
 // 初期化
 Game::Game(const InitData& init) : IScene(init) {
 	Scene::SetBackground(Palette::Gray);
+	world = P2World(0);
 
 	Player tmp(U"M2", Vec2(50, 50), U"Human", U"Luke");
+	tmp.SetBody(world);
+	bodies << tmp.Body;
 	Players << tmp;
 	for (auto i : step(getData().PlayerNum-1)) {
 		tmp = Player(U"R", Vec2(Random() * (FieldSize.x - 100), Random() * (FieldSize.y - 100)), U"CPU", U"CPU" + ToString(i + 1));
+		tmp.SetBody(world);
 		Players << tmp;
+		bodies << tmp.Body;
 	}
 
 	camera = Camera2D(Players[0].Pos, 0.5);
 	Frame = 0;
+	LogFont = Font(20);
+	Alive = true;
+
+	Objects = Grid<Array<Object>>(10, 10);
+	const JSONReader json(U"objects.json");
+	if (!json) {// もし読み込みに失敗したら
+		throw Error(U"Failed to load `objects.json`");
+	}
+	for (const auto& object : json.objectView()) {
+
+		int32 px = object.value[U"Pos"][U"x"].get<int32>();
+		int32 py = object.value[U"Pos"][U"y"].get<int32>();
+		int32 sx = object.value[U"Scale"][U"x"].get<int32>();
+		int32 sy = object.value[U"Scale"][U"y"].get<int32>();
+		
+		Object tmp(Vec2(px, py), Vec2(sx, sy));
+
+		Objects[py / int32(FieldSize.y / 10)][px / int32(FieldSize.y / 10)] << tmp;
+		bodies << world.createStaticRect(tmp.Body.center(), tmp.Body.size).setPos(tmp.Body.center());
+	}
 }
 
 // 更新
@@ -22,21 +47,24 @@ void Game::update() {
 
 	ClearPrint();
 
-	for (auto i : Logs) {
-		Print << i;
-	}
-
 	Print << Players.size();
 	Print << Players[0].WeaponNow;
+	Print << Players[0].HP;
+	Print << bodies[0].getPos();
+	Print << Objects[0][1][0].Body.intersects(Circle(Players[0].Pos, PlayerSize));
 
+	world.update();
 	camera.update();
-	camera.setScale(.5);
-	camera.setCenter(Players[0].Pos);
+	if (Alive) {
+		camera.setScale(.5);
+		camera.setCenter(Players[0].Pos);
+	}
 	for (int32 i = 0; i < Players.size(); ++i) {
+		Players[i].Pos = bodies[i].getPos();
 		if (Players[i].Type == U"Human") {
 			const auto t = camera.createTransformer();
-			double Arc = Players[0].Arc = atan2(Cursor::Pos().y - Players[i].Pos.y, Cursor::Pos().x - Players[i].Pos.x);
-			Print << Players[i].Cool;
+			double Arc = Players[i].Arc = atan2(Cursor::Pos().y - Players[i].Pos.y, Cursor::Pos().x - Players[i].Pos.x);
+			//Print << Players[i].Cool;
 			if (KeyW.pressed()) {
 				Players[i].Pos.y += Players[i].MoveSpeed * sin(Arc);
 				Players[i].Pos.x += Players[i].MoveSpeed * cos(Arc);
@@ -81,7 +109,7 @@ void Game::update() {
 				}
 			}
 
-			if (MouseL.down() && Players[i].WeaponNow == U"Sub") {
+			if (MouseL.pressed() && Players[i].WeaponNow == U"Sub") {
 				Bullet tmp(Players[i], Arc);
 				//自滅回避
 				tmp.Pos.x += (PlayerSize * 2 + 10) * cos(Arc);
@@ -93,8 +121,8 @@ void Game::update() {
 
 			if (KeyShift.pressed() && (Players[i].MainWeapon[0] == 'S' && Players[i].WeaponNow==U"Main")) {//スコープ
 				camera.setScale(.4);
-				camera.setCenter(Players[0].Pos + Vec2(1000 * cos(Arc), 1000 * sin(Arc)));
-				Players[i].Err = Max(0, Players[0].Err - 1);
+				camera.setCenter(Players[i].Pos + Vec2(1000 * cos(Arc), 1000 * sin(Arc)));
+				Players[i].Err = Max(0, Players[i].Err - 1);
 			}
 			if (KeyShift.up() && Players[i].MainWeapon[0] == 'S') {
 				Players[i].Err = 50 + (Players[i].MainWeapon[1] - '0' - 1) * 50;
@@ -106,7 +134,7 @@ void Game::update() {
 		}
 
 		else { //NPCの動作
-
+			act(i);
 		}
 
 
@@ -114,14 +142,18 @@ void Game::update() {
 			if (Circle(Players[i].Pos, PlayerSize).intersects(Line(Bullets[j].Pos, Bullets[j].Pos - Vec2(Bullets[j].Speed * cos(Bullets[j].Arc), Bullets[j].Speed * sin(Bullets[j].Arc))))) {
 				Players[i].HP -= Bullets[j].Damage;
 				if (Players[i].HP <= 0) {
-					Logs << Bullets[j].Master + U" killed " + Players[i].Name;
+					Logs << KillLog(Bullets[j].Master + U" killed " + Players[i].Name);
 				}
 				Bullets.remove_at(j);
 				--j;
 			}
 		}
 		if (Players[i].HP <= 0) {
+			if (i == 0) {
+				Alive = false;
+			}
 			Players.remove_at(i);
+			bodies.remove_at(i);
 			--i;
 			continue;
 		}
@@ -130,6 +162,9 @@ void Game::update() {
 		Players[i].Pos.x = Max(PlayerSize, Players[i].Pos.x);
 		Players[i].Pos.y = Min(FieldSize.x - PlayerSize, Players[i].Pos.y);
 		Players[i].Pos.y = Max(PlayerSize, Players[i].Pos.y);
+
+		bodies[i].setPos(Players[i].Pos);
+
 	}
 
 	for (int32 i = 0; i < Bullets.size(); ++i) {
@@ -138,9 +173,44 @@ void Game::update() {
 			--i;
 			continue;
 		}
+
+		bool removed = false;
+		Line body(Bullets[i].Pos, Bullets[i].Pos - Vec2(Bullets[i].Speed * cos(Bullets[i].Arc), Bullets[i].Speed * sin(Bullets[i].Arc)));
+		for (auto j : Objects) {
+			for (auto k : j) {
+				if (k.Body.intersects(body)) {
+					Bullets.remove_at(i);
+					--i;
+					removed = true;
+					break;
+				}
+			}
+			if (removed) {
+				break;
+			}
+		}
+
+		if (removed) {
+			continue;
+		}
 		--Bullets[i].Life;
 		Bullets[i].Pos.x += Bullets[i].Speed * cos(Bullets[i].Arc);
 		Bullets[i].Pos.y += Bullets[i].Speed * sin(Bullets[i].Arc);
+	}
+
+
+
+	for (int32 i = 0; i < Logs.size(); ++i) {
+		Logs[i].life--;
+		if (Logs[i].life <= 0) {
+			Logs.remove_at(i);
+			--i;
+			continue;
+		}
+	}
+
+	while (Logs.size() > 10) {
+		Logs.remove_at(0);
 	}
 
 	++Frame;
@@ -156,7 +226,17 @@ void Game::draw() const {
 
 		double Arc = atan2(Cursor::Pos().y - Players[0].Pos.y, Cursor::Pos().x - Players[0].Pos.x);
 		Bullet tmp(Players[0], Arc);
-		Line(Players[0].Pos, Players[0].Pos + Vec2(tmp.Life * tmp.Speed * cos(Arc), tmp.Life * tmp.Speed * sin(Arc))).draw(LineStyle::RoundDot, 12, Palette::Orange);
+		if (Alive) {
+			Line(Players[0].Pos, Players[0].Pos + Vec2(tmp.Life * tmp.Speed * cos(Arc), tmp.Life * tmp.Speed * sin(Arc))).draw(LineStyle::RoundDot, 12, Palette::Orange);
+
+			if (Players[0].MainWeapon[0] == 'M' && (MouseL.pressed() || Players[0].Cool != -1) && Players[0].WeaponNow == U"Main") {
+				Circle(Players[0].Pos, tmp.Life * tmp.Speed).drawPie(Arc + 90_deg - ToRadians(Players[0].Err), ToRadians(Players[0].Err * 2), ColorF(255, 0, 0, 0.3));
+			}
+			elif(KeyShift.pressed() && Players[0].MainWeapon[0] == 'S' && Players[0].WeaponNow == U"Main") {
+				Circle(Players[0].Pos, tmp.Life * tmp.Speed).drawPie(Arc + 90_deg - ToRadians(Players[0].Err / 4), ToRadians(Players[0].Err / 2), ColorF(255, 0, 0, 0.3));
+				Circle(Players[0].Pos, 2500).drawPie(Arc + 120_deg, 300_deg, ColorF(0, 0, 0, 0.95));
+			}
+		}
 
 		for (auto i : Players) {
 			Circle(i.Pos, PlayerSize).draw(Palette::Brown);
@@ -168,15 +248,75 @@ void Game::draw() const {
 			Circle(i.Pos, 5).draw(Palette::Black);
 		}
 
-
-		if (Players[0].MainWeapon[0] == 'M' && (MouseL.pressed() || Players[0].Cool != -1)) {
-			Circle(Players[0].Pos, tmp.Life * tmp.Speed).drawPie(Arc + 90_deg - ToRadians(Players[0].Err), ToRadians(Players[0].Err * 2), ColorF(255, 0, 0, 0.3));
+		for (auto i : Objects) {
+			for (auto j : i) {
+				j.Body.draw();
+			}
 		}
-		elif(KeyShift.pressed() && Players[0].MainWeapon[0] == 'S' && Players[0].WeaponNow==U"Main") {
-			Circle(Players[0].Pos, tmp.Life * tmp.Speed).drawPie(Arc + 90_deg - ToRadians(Players[0].Err / 4), ToRadians(Players[0].Err / 2), ColorF(255, 0, 0, 0.3));
-			Circle(Players[0].Pos, 2500).drawPie(Arc + 120_deg, 300_deg, ColorF(0, 0, 0, 0.95));
-		}
-
 	}
 
+	for (int32 i = 0; i < Logs.size(); ++i) {
+		LogFont(Logs[i].str).draw(5, 5 + i * LogFont.fontSize());
+	}
+
+}
+
+
+void Game::act(int32 i) {
+	//Print << Players[i].Err;
+	if (Players[i].Type == U"Human")return;
+	elif(Players[i].Type == U"CPU") {
+		Circle Vision(Players[i].Pos, 800);
+		bool Found = false;
+		Vec2 To;
+
+		Array<int32>array;
+		for (int32 j : step(Players.size())) {
+			array << j;
+		}
+
+		Shuffle(array.begin(), array.end());
+		for (auto j : array) {
+			if (Players[j].Pos == Players[i].Pos)continue;
+			if (Vision.intersects(Circle(Players[j].Pos, PlayerSize))) {
+
+				Players[i].Arc = atan2(Players[j].Pos.y - Players[i].Pos.y, Players[j].Pos.x - Players[i].Pos.x);
+				Found = true;
+				To = Players[j].Pos;
+				break;
+			}
+		}
+
+		Bullet tmp(Players[i], Players[i].Arc);
+		if (Frame % 300 == 0) {
+			Players[i].Arc = ToRadians(Random() * 360);
+		}
+		elif(Found) {
+			if (Players[i].Cool <= 0 && ((Players[i].WeaponNow == U"Main" && Players[i].MainWeapon[0] == 'M' && (Players[i].Err < 5 || Players[i].Cool == -1)) || Players[i].MainWeapon[0] == 'S')) {
+				Players[i].Cool = Players[i].CoolMax;
+				double a = Players[i].Arc;
+				if (Players[i].WeaponNow == U"Main") {
+					if (Players[i].MainWeapon[0] == 'M') {
+						Players[i].Err = Min(20 * (Players[i].MainWeapon[1] - '0'), Players[i].Err + (Players[i].MainWeapon[1] - '0'));
+						if (Players[i].Cool == -1) Players[i].Err = 0;
+						a = Players[i].Arc + ToRadians(Random() * Players[i].Err * 2 - Players[i].Err);
+					}
+					elif(Players[i].MainWeapon[0] == 'S') {
+						a = Players[i].Arc + ToRadians(Random() * Players[i].Err / 2 - Players[i].Err / 4);
+					}
+				}
+				tmp = Bullet(Players[i], a);
+				tmp.Pos.x += (PlayerSize * 2 + 10) * cos(Players[i].Arc);
+				tmp.Pos.y += (PlayerSize * 2 + 10) * sin(Players[i].Arc);
+				Bullets << tmp;
+			}
+		}
+
+		if (!Found || (Found && To.distanceFrom(Players[i].Pos) > tmp.Life * tmp.Speed)) {
+			Players[i].Pos.y += Players[i].MoveSpeed * sin(Players[i].Arc);
+			Players[i].Pos.x += Players[i].MoveSpeed * cos(Players[i].Arc);
+		}
+		Players[i].Cool = Max(-1, Players[i].Cool - 1);
+
+	}
 }
