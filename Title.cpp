@@ -8,7 +8,7 @@ Title::Title(const InitData& init) : IScene(init) {
 
 // XV
 void Title::update() {
-	getData().PlayerNum = 10;
+	getData().PlayerNum = 50;
 	changeScene(U"Game");
 }
 

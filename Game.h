@@ -11,9 +11,12 @@ private:
 
 	Array<Player>Players;
 	Array<Bullet>Bullets;
-	Array<String>Logs;
+	Array<KillLog>Logs;
 	Camera2D camera;
 	int32 Frame;
+	Font LogFont;
+	bool Alive;
+	Array<Array<Object>> Objects;
 	
 
 public:
@@ -21,5 +24,5 @@ public:
 	Game(const InitData& init);
 	void update() override;
 	void draw() const override;
-	void act(int32 index, int32 action);
+	void act(int32 i);
 };
