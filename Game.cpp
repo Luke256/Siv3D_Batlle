@@ -51,7 +51,7 @@ void Game::update() {
 	Print << Players[0].WeaponNow;
 	Print << Players[0].HP;
 	Print << bodies[0].getPos();
-	Print << Objects[0][1][0].Body.intersects(Circle(Players[0].Pos, PlayerSize));
+	Print << camera.getCenter();
 
 	world.update();
 	camera.update();
@@ -120,9 +120,11 @@ void Game::update() {
 			Players[i].Cool = Max(-1, Players[i].Cool - 1);
 
 			if (KeyShift.pressed() && (Players[i].MainWeapon[0] == 'S' && Players[i].WeaponNow==U"Main")) {//スコープ
-				camera.setScale(.4);
-				camera.setCenter(Players[i].Pos + Vec2(1000 * cos(Arc), 1000 * sin(Arc)));
-				Players[i].Err = Max(0, Players[i].Err - 1);
+				if (Alive) {
+					camera.setScale(.4);
+					camera.setCenter(Players[i].Pos + Vec2(1000 * cos(Arc), 1000 * sin(Arc)));
+					Players[i].Err = Max(0, Players[i].Err - 1);
+				}
 			}
 			if (KeyShift.up() && Players[i].MainWeapon[0] == 'S') {
 				Players[i].Err = 50 + (Players[i].MainWeapon[1] - '0' - 1) * 50;
@@ -150,6 +152,9 @@ void Game::update() {
 		}
 		if (Players[i].HP <= 0) {
 			if (i == 0) {
+				if(Alive){
+					camera.setCenter(Vec2(2500,2500));
+				}
 				Alive = false;
 			}
 			Players.remove_at(i);
