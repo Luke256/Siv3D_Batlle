@@ -5,7 +5,7 @@
 // ‰Šú‰»
 Game::Game(const InitData& init) : IScene(init) {
 	Scene::SetBackground(Palette::Gray);
-	world = P2World(0);
+	world = P2World(0.3);
 
 	Player tmp(U"M2", Vec2(50, 50), U"Human", U"Luke");
 	tmp.SetBody(world);
@@ -53,7 +53,6 @@ void Game::update() {
 	Print << bodies[0].getPos();
 	Print << camera.getCenter();
 
-	world.update();
 	camera.update();
 	if (Alive) {
 		camera.setScale(.5);
@@ -219,6 +218,7 @@ void Game::update() {
 	}
 
 	++Frame;
+	world.update();
 }
 
 // •`‰æ
